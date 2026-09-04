@@ -1,0 +1,51 @@
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: tenpo-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-tenpo}
+      POSTGRES_USER: ${DB_USER:-tenpo}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-tenpo}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-tenpo} -d ${DB_NAME:-tenpo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: tenpo-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    image: ${DOCKERHUB_IMAGE:-tenpo-challenge}:${IMAGE_TAG:-latest}
+    container_name: tenpo-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-tenpo}
+      DB_USER: ${DB_USER:-tenpo}
+      DB_PASSWORD: ${DB_PASSWORD:-tenpo}
+      REDIS_URL: redis://redis:6379
+      # Subir a 1.0 para forzar los fallos del servicio externo y ver los reintentos.
+      MOCK_FAILURE_RATE: ${MOCK_FAILURE_RATE:-0.0}
+    ports:
+      - "${API_PORT:-8080}:8080"
+
+volumes:
+  postgres-data:

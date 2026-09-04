@@ -1,0 +1,336 @@
+# Tenpo — Backend Challenge 2026
+
+API REST reactiva construida con **Spring Boot 4 / Spring WebFlux** y **Java 21**. Calcula la suma de dos números aplicando un porcentaje obtenido de un servicio externo, registra de forma asíncrona el historial de llamadas en PostgreSQL y limita el tráfico a 3 peticiones por minuto mediante un token bucket distribuido en Redis.
+
+---
+
+## Índice
+
+- [Levantar el proyecto](#levantar-el-proyecto)
+- [Endpoints](#endpoints)
+- [Cómo probar cada funcionalidad](#cómo-probar-cada-funcionalidad)
+- [Documentación de la API](#documentación-de-la-api)
+- [Arquitectura](#arquitectura)
+- [Tests](#tests)
+- [Decisiones técnicas](#decisiones-técnicas)
+- [Publicar la imagen en Docker Hub](#publicar-la-imagen-en-docker-hub)
+
+---
+
+## Levantar el proyecto
+
+### Con Docker Compose (recomendado)
+
+Único requisito: Docker.
+
+```bash
+docker compose up --build -d
+```
+
+Levanta tres contenedores: la API (`:8080`), PostgreSQL (`:5432`) y Redis (`:6379`). La API espera a que ambos estén *healthy* antes de arrancar, y Flyway crea el esquema en el primer arranque.
+
+Comprobar que está arriba:
+
+```bash
+curl http://localhost:8080/actuator/health
+```
+
+Ver los logs:
+
+```bash
+docker compose logs -f api
+```
+
+Detener todo (`-v` elimina también los datos de PostgreSQL):
+
+```bash
+docker compose down -v
+```
+
+### En local, sin contenerizar la API
+
+Necesitas PostgreSQL y Redis corriendo. Lo más cómodo es levantar solo esas dos dependencias con Compose:
+
+```bash
+docker compose up -d postgres redis
+```
+
+Y luego arrancar la aplicación con el wrapper de Maven (no hace falta tener Maven instalado):
+
+```bash
+./mvnw spring-boot:run
+```
+
+Las variables de entorno soportadas están en [`.env.example`](.env.example); todas tienen valores por defecto que funcionan con el Compose de este repositorio.
+
+---
+
+## Endpoints
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/v1/calculations` | Suma dos números y les aplica el porcentaje del servicio externo |
+| `GET` | `/api/v1/history` | Historial paginado de llamadas a la API |
+| `GET` | `/internal/mock/percentage` | Mock del servicio externo (fuera de `/api`, no consume cuota) |
+| `GET` | `/actuator/health` | Estado del servicio |
+| `GET` | `/swagger-ui.html` | Documentación interactiva |
+
+### `POST /api/v1/calculations`
+
+```bash
+curl -X POST http://localhost:8080/api/v1/calculations \
+  -H 'Content-Type: application/json' \
+  -d '{"num1": 5, "num2": 5}'
+```
+
+```json
+{
+  "num1": 5,
+  "num2": 5,
+  "percentageApplied": 12.4,
+  "result": 11.24
+}
+```
+
+El porcentaje es **aleatorio en cada llamada** (ver [Decisiones técnicas](#decisiones-técnicas)), por eso la respuesta incluye `percentageApplied`: sin ese dato el resultado no sería verificable por el cliente.
+
+### `GET /api/v1/history`
+
+```bash
+curl 'http://localhost:8080/api/v1/history?page=0&size=10'
+```
+
+```json
+{
+  "content": [
+    {
+      "id": 12,
+      "calledAt": "2026-09-04T03:21:44.512Z",
+      "endpoint": "/api/v1/calculations",
+      "httpMethod": "POST",
+      "parameters": "body={\"num1\": 5, \"num2\": 5}",
+      "response": "{\"num1\":5,\"num2\":5,\"percentageApplied\":12.4,\"result\":11.24}",
+      "error": null,
+      "statusCode": 200,
+      "durationMs": 37
+    }
+  ],
+  "page": 0,
+  "size": 10,
+  "totalElements": 1,
+  "totalPages": 1
+}
+```
+
+Parámetros: `page` (base 0, por defecto `0`) y `size` (por defecto `20`, máximo `100`). El orden es siempre por fecha descendente.
+
+---
+
+## Cómo probar cada funcionalidad
+
+### 1. Cálculo con porcentaje dinámico
+
+```bash
+curl -X POST http://localhost:8080/api/v1/calculations \
+  -H 'Content-Type: application/json' -d '{"num1": 5, "num2": 5}'
+```
+
+Con un porcentaje del 10% el resultado sería `11.00`, tal como pide el enunciado. Como el mock devuelve un valor aleatorio entre 5% y 20%, el resultado real estará entre `10.50` y `12.00` y cambiará entre llamadas.
+
+### 2. Reintentos ante fallos del servicio externo
+
+Levanta la API forzando que el servicio externo falle siempre:
+
+```bash
+MOCK_FAILURE_RATE=1.0 docker compose up -d --force-recreate api
+```
+
+```bash
+curl -i -X POST http://localhost:8080/api/v1/calculations \
+  -H 'Content-Type: application/json' -d '{"num1": 5, "num2": 5}'
+```
+
+Responde `503` y en los logs se ven los tres intentos:
+
+```bash
+docker compose logs api | grep "servicio de porcentaje"
+```
+
+Para volver al comportamiento normal: `docker compose up -d --force-recreate api`.
+
+### 3. Historial de llamadas
+
+Haz un par de llamadas y consúltalo:
+
+```bash
+curl 'http://localhost:8080/api/v1/history?page=0&size=5'
+```
+
+El registro es asíncrono, así que la escritura no suma latencia a la respuesta. Se registran también las llamadas fallidas, incluidas las rechazadas por rate limit.
+
+### 4. Rate limiting (3 RPM)
+
+```bash
+for i in 1 2 3 4; do
+  curl -s -o /dev/null -w "intento $i -> %{http_code}\n" http://localhost:8080/api/v1/history
+done
+```
+
+```
+intento 1 -> 200
+intento 2 -> 200
+intento 3 -> 200
+intento 4 -> 429
+```
+
+La respuesta `429` incluye la cabecera `X-Rate-Limit-Retry-After-Seconds` y un cuerpo descriptivo.
+
+### 5. Manejo de errores HTTP
+
+```bash
+# 400 — falta num2
+curl -s -X POST http://localhost:8080/api/v1/calculations \
+  -H 'Content-Type: application/json' -d '{"num1": 5}' | jq
+
+# 404 — ruta inexistente
+curl -s http://localhost:8080/api/v1/no-existe | jq
+```
+
+Todas las respuestas de error siguen el formato **RFC 7807** (`application/problem+json`):
+
+```json
+{
+  "type": "https://tenpo.cl/errors/400",
+  "title": "Petición inválida",
+  "status": 400,
+  "detail": "num2: num2 es obligatorio",
+  "instance": "/api/v1/calculations",
+  "timestamp": "2026-09-04T03:22:10.884Z"
+}
+```
+
+---
+
+## Documentación de la API
+
+Con el servicio levantado:
+
+- **Swagger UI** → http://localhost:8080/swagger-ui.html
+- **OpenAPI JSON** → http://localhost:8080/v3/api-docs
+
+---
+
+## Arquitectura
+
+```
+cl.tenpo.challenge
+├── config/     AppProperties, WebClientConfig, RedisConfig, OpenApiConfig
+├── domain/     CalculationService, CallHistoryService, PercentageProvider (puerto)
+├── infra/      RemotePercentageProvider (WebClient + reintentos),
+│               MockPercentageController, CallHistory (entidad) + repositorio
+└── web/        Controladores, DTOs, GlobalExceptionHandler
+    └── filter/ CallHistoryWebFilter (orden 0), RateLimitWebFilter (orden 10)
+```
+
+Flujo de una petición a `/api/**`:
+
+```
+Cliente
+  │
+  ▼
+CallHistoryWebFilter ─── registra la llamada (asíncrono, fuera de la respuesta) ──► PostgreSQL
+  │
+  ▼
+RateLimitWebFilter ───── token bucket ──────────────────────────────────────────► Redis
+  │                       └── sin cupo ─► 429
+  ▼
+Controlador ─► CalculationService ─► RemotePercentageProvider ──► Servicio externo
+                                          └── 3 intentos, si fallan todos ─► 503
+```
+
+El filtro de historial es el **más externo** a propósito: así quedan registradas también las peticiones rechazadas con `429`, que nunca llegan al controlador.
+
+---
+
+## Tests
+
+```bash
+./mvnw verify
+```
+
+Requiere Docker: los tests de integración levantan PostgreSQL y Redis con Testcontainers.
+
+| Test | Qué cubre |
+|---|---|
+| `CalculationServiceTest` | Fórmula, redondeo `HALF_UP` a 2 decimales y propagación de errores |
+| `RemotePercentageProviderTest` | Reintentos contra un servidor HTTP real (WireMock): éxito, fallo‑luego‑éxito, 3 fallos → error, y timeout |
+| `CallHistoryRepositoryTest` | Esquema de Flyway y paginación sobre PostgreSQL real |
+| `ApiIntegrationTest` | Recorrido end‑to‑end: cálculo, validación, `503`, `429`, registro asíncrono en historial y `404` |
+
+---
+
+## Decisiones técnicas
+
+### Spring WebFlux para la capa web
+
+El enunciado ofrecía punto extra por programación reactiva, pero la razón de fondo es que este servicio es **I/O bound**: cada petición espera por un servicio HTTP externo y por la base de datos. Con el modelo de un hilo por petición, la mayor parte del tiempo esos hilos están bloqueados sin hacer nada. WebFlux atiende con un puñado de hilos (uno por core) y libera el hilo mientras espera, lo que sostiene mucha más concurrencia con menos memoria.
+
+### JPA aislado en `boundedElastic()` en lugar de R2DBC
+
+Es el compromiso más discutible del proyecto y conviene declararlo abiertamente: **WebFlux con JPA no es reactivo puro**, porque JPA bloquea el hilo mientras espera a la base de datos.
+
+La mitigación es que *todo* acceso a datos pasa por un único punto, `CallHistoryService`, que publica las operaciones en `Schedulers.boundedElastic()`. El event loop de Netty nunca queda bloqueado: el bloqueo se confina a un pool elástico dimensionado junto al pool de conexiones de HikariCP.
+
+¿Por qué no R2DBC, que sería la opción 100% no bloqueante? Porque el modelo de datos aquí es una sola tabla plana sin relaciones, donde JPA no aporta casi nada… pero el ecosistema alrededor sí: Flyway para versionar el esquema, `Pageable` para la paginación y `@DataJpaTest` para los tests salen gratis. R2DBC habría exigido SQL manual para paginar y contar, e inicialización del esquema por fuera de Flyway. Se priorizó mantenibilidad y familiaridad del equipo sobre pureza arquitectónica, sabiendo que si el historial creciera hasta ser el cuello de botella, migrar esa única clase a R2DBC es un cambio acotado.
+
+### El mock devuelve un porcentaje aleatorio, no un valor fijo
+
+El enunciado permitía un mock que retornara siempre 10%. Se optó por un **valor aleatorio** entre 5% y 20% (`app.mock.min-percentage` / `max-percentage`) porque un mock constante no ejercita nada: con él, un bug de redondeo o un porcentaje que no se propaga hasta la respuesta pasarían desapercibidos.
+
+Consecuencias asumidas:
+
+- La respuesta expone `percentageApplied`, de modo que el resultado sigue siendo auditable.
+- Los tests **no** dependen del azar: sustituyen el servicio externo por WireMock con un valor fijo.
+- Existe `app.mock.seed` para hacer reproducible la secuencia cuando se necesita.
+
+### Sin caché del porcentaje
+
+Cada cálculo consulta el servicio externo. Se evaluó cachear el último porcentaje (ahorra llamadas y sirve de respaldo cuando el servicio cae) y se descartó: el enunciado pide que un fallo tras 3 intentos devuelva error, y una caché de respaldo enmascararía justamente esa condición. Añadirla más adelante es trivial —un `Mono.cache()` con TTL en `RemotePercentageProvider`— si el servicio externo pasara a ser costoso.
+
+### Reintentos con backoff exponencial
+
+`Retry.backoff(2, 200ms)` sobre el `Mono` del `WebClient`: 1 intento original + 2 reintentos = **3 intentos totales**, con espera creciente y *jitter* para no golpear en sincronía a un servicio que se está recuperando. Agotados los intentos, el error se traduce a una excepción de dominio que el manejador global convierte en `503`.
+
+### Rate limiting con Bucket4j sobre Redis
+
+Un contador en memoria limitaría a 3 RPM **por instancia**: con dos réplicas el límite real sería 6. Alojar el token bucket en Redis mantiene el límite global independientemente de cuántas instancias corran. Las operaciones contra Redis son asíncronas (`CompletableFuture` envuelto en `Mono`), de modo que el filtro tampoco bloquea el event loop.
+
+Se usa `refillGreedy`: los tokens se reponen de forma continua (uno cada 20 s) en vez de liberarse los 3 de golpe al cambiar de minuto, lo que evita ráfagas en el borde de la ventana.
+
+### Historial asíncrono y a prueba de fallos
+
+El registro se dispara desde un `WebFilter` **fuera de la cadena de respuesta**: el cliente recibe su respuesta sin esperar a la escritura en base de datos. Si la escritura falla, se registra el error en el log y la petición del cliente no se ve afectada — un historial caído no puede tumbar la funcionalidad principal.
+
+Los cuerpos de request y response se truncan a 2.000 caracteres: el historial es una bitácora de auditoría, no un almacén de payloads.
+
+### Errores en formato RFC 7807
+
+Todas las respuestas de error usan `ProblemDetail` (`application/problem+json`), un estándar que los clientes pueden parsear de forma uniforme, con `type`, `title`, `status`, `detail`, `instance` y `timestamp`.
+
+---
+
+## Publicar la imagen en Docker Hub
+
+```bash
+docker build --platform linux/amd64 -t <tu-usuario>/tenpo-challenge:1.0.0 .
+```
+
+```bash
+docker login
+```
+
+```bash
+docker push <tu-usuario>/tenpo-challenge:1.0.0
+```
+
+Para levantar el proyecto usando la imagen publicada en lugar de compilarla, define `DOCKERHUB_IMAGE` e `IMAGE_TAG` en tu `.env` y reemplaza `build: .` por `image: ${DOCKERHUB_IMAGE}:${IMAGE_TAG}` en `docker-compose.yml`.
