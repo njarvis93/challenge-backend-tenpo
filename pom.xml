@@ -18,6 +18,22 @@
 		<springdoc.version>3.1.0</springdoc.version>
 		<bucket4j.version>8.19.0</bucket4j.version>
 		<wiremock.version>3.13.1</wiremock.version>
+		<jacoco.version>0.8.13</jacoco.version>
+		<sonar.version>5.1.0.4751</sonar.version>
+
+		<!-- Umbral minimo de cobertura de lineas exigido por jacoco:check.
+		     Se comprueba en el build, no solo en el analisis de SonarQube. -->
+		<coverage.minimum>0.80</coverage.minimum>
+
+		<!-- Analisis de SonarQube. projectKey y organization siguen la
+		     convencion de SonarQube Cloud (<owner>_<repo> y <owner>); para un
+		     servidor propio basta con sobreescribirlos por linea de comandos. -->
+		<sonar.projectKey>njarvis93_challenge-backend-tenpo</sonar.projectKey>
+		<sonar.organization>njarvis93</sonar.organization>
+		<sonar.host.url>https://sonarcloud.io</sonar.host.url>
+		<sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+		<!-- La clase de arranque solo invoca SpringApplication.run -->
+		<sonar.coverage.exclusions>**/ChallengeBackendTenpoApplication.java</sonar.coverage.exclusions>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -140,6 +156,61 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+
+			<!-- Cobertura: instrumenta los tests, genera el XML que consume
+			     SonarQube y falla el build si baja del umbral. -->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>${jacoco.version}</version>
+				<configuration>
+					<excludes>
+						<exclude>cl/tenpo/challenge/ChallengeBackendTenpoApplication.class</exclude>
+					</excludes>
+				</configuration>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>check-coverage</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<rule>
+									<element>BUNDLE</element>
+									<limits>
+										<limit>
+											<counter>LINE</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>${coverage.minimum}</minimum>
+										</limit>
+									</limits>
+								</rule>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
+			<plugin>
+				<groupId>org.sonarsource.scanner.maven</groupId>
+				<artifactId>sonar-maven-plugin</artifactId>
+				<version>${sonar.version}</version>
 			</plugin>
 		</plugins>
 	</build>

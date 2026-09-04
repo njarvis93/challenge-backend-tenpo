@@ -1,0 +1,60 @@
+name: SonarQube
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: sonar-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: Analisis estatico y cobertura
+    runs-on: ubuntu-latest
+    # Un PR desde un fork no recibe SONAR_TOKEN, asi que el analisis se omite.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Historial completo: SonarQube lo necesita para atribuir los
+          # problemas al codigo nuevo y calcular la cobertura del cambio.
+          fetch-depth: 0
+
+      - name: Configurar JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Cachear paquetes de SonarQube
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      # verify ejecuta los tests, genera el reporte de JaCoCo y aplica
+      # jacoco:check, que ya falla si la cobertura de lineas baja del 80%.
+      # sonar:sonar sube ese reporte junto con bugs, vulnerabilidades y code
+      # smells, y qualitygate.wait espera el veredicto del Quality Gate.
+      - name: Build, cobertura y analisis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          ./mvnw -B -ntp verify sonar:sonar \
+            -Dsonar.qualitygate.wait=true
+
+      - name: Publicar reporte de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          retention-days: 7

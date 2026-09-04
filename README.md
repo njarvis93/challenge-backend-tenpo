@@ -12,6 +12,7 @@ API REST reactiva construida con **Spring Boot 4 / Spring WebFlux** y **Java 21*
 - [Documentación de la API](#documentación-de-la-api)
 - [Arquitectura](#arquitectura)
 - [Tests](#tests)
+- [Integración continua](#integración-continua)
 - [Decisiones técnicas](#decisiones-técnicas)
 - [Publicar la imagen en Docker Hub](#publicar-la-imagen-en-docker-hub)
 
@@ -266,6 +267,35 @@ Requiere Docker: los tests de integración levantan PostgreSQL y Redis con Testc
 | `RemotePercentageProviderTest` | Reintentos contra un servidor HTTP real (WireMock): éxito, fallo‑luego‑éxito, 3 fallos → error, y timeout |
 | `CallHistoryRepositoryTest` | Esquema de Flyway y paginación sobre PostgreSQL real |
 | `ApiIntegrationTest` | Recorrido end‑to‑end: cálculo, validación, `503`, `429`, registro asíncrono en historial y `404` |
+
+`verify` además genera el reporte de cobertura de JaCoCo en `target/site/jacoco/` y falla si la cobertura de líneas baja del **80 %** (umbral configurable en la propiedad `coverage.minimum` del `pom.xml`). Cobertura actual: **88 % de líneas**.
+
+---
+
+## Integración continua
+
+Dos workflows de GitHub Actions se ejecutan en cada push a `main` y en cada pull request:
+
+| Workflow | Qué hace |
+|---|---|
+| [`build.yml`](.github/workflows/build.yml) | Compila con JDK 21, ejecuta la suite completa de tests (Testcontainers usa el Docker del runner), publica el jar y los reportes, y valida que el `Dockerfile` construya |
+| [`sonarqube.yml`](.github/workflows/sonarqube.yml) | Ejecuta los tests con cobertura y sube el análisis a SonarQube: bugs, vulnerabilidades, code smells y cobertura. Espera el veredicto del Quality Gate (`sonar.qualitygate.wait`), de modo que el job falla si el proyecto no lo supera |
+
+El umbral de cobertura se comprueba en dos puntos: `jacoco:check` lo exige durante el build (80 % de líneas) y el Quality Gate de SonarQube lo vuelve a evaluar sobre el código nuevo.
+
+### Configuración necesaria
+
+El análisis requiere un único secreto en el repositorio, **`SONAR_TOKEN`**, generado desde SonarQube. Las coordenadas del proyecto viven en las propiedades del `pom.xml`:
+
+```xml
+<sonar.projectKey>njarvis93_challenge-backend-tenpo</sonar.projectKey>
+<sonar.organization>njarvis93</sonar.organization>
+<sonar.host.url>https://sonarcloud.io</sonar.host.url>
+```
+
+Para un servidor de SonarQube propio en lugar de SonarQube Cloud basta con apuntar `sonar.host.url` a esa instancia y eliminar `sonar.organization`, que solo aplica a la versión cloud.
+
+Los pull requests provenientes de un fork no reciben el secreto, así que el workflow de análisis se omite en ese caso; el de build sigue ejecutándose.
 
 ---
 
