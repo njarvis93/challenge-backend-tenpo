@@ -275,27 +275,17 @@ Requiere Docker: los tests de integración levantan PostgreSQL y Redis con Testc
 
 El enunciado ofrecía punto extra por programación reactiva, pero la razón de fondo es que este servicio es **I/O bound**: cada petición espera por un servicio HTTP externo y por la base de datos. Con el modelo de un hilo por petición, la mayor parte del tiempo esos hilos están bloqueados sin hacer nada. WebFlux atiende con un puñado de hilos (uno por core) y libera el hilo mientras espera, lo que sostiene mucha más concurrencia con menos memoria.
 
-### JPA aislado en `boundedElastic()` en lugar de R2DBC
+### JPA sobre R2DBC para la capa de persistencia
 
-Es el compromiso más discutible del proyecto y conviene declararlo abiertamente: **WebFlux con JPA no es reactivo puro**, porque JPA bloquea el hilo mientras espera a la base de datos.
+El modelo de datos es una única tabla plana sin relaciones, así que el criterio de elección no fue el mapeo objeto‑relacional sino el ecosistema alrededor: con JPA vienen de serie Flyway para versionar el esquema, `Pageable` para la paginación del historial y `@DataJpaTest` para los tests de repositorio contra PostgreSQL real. R2DBC habría exigido escribir a mano el SQL de paginado y de conteo, y resolver la inicialización del esquema por fuera de Flyway, a cambio de una ganancia marginal en un endpoint de consulta que no está en la ruta crítica.
 
-La mitigación es que *todo* acceso a datos pasa por un único punto, `CallHistoryService`, que publica las operaciones en `Schedulers.boundedElastic()`. El event loop de Netty nunca queda bloqueado: el bloqueo se confina a un pool elástico dimensionado junto al pool de conexiones de HikariCP.
-
-¿Por qué no R2DBC, que sería la opción 100% no bloqueante? Porque el modelo de datos aquí es una sola tabla plana sin relaciones, donde JPA no aporta casi nada… pero el ecosistema alrededor sí: Flyway para versionar el esquema, `Pageable` para la paginación y `@DataJpaTest` para los tests salen gratis. R2DBC habría exigido SQL manual para paginar y contar, e inicialización del esquema por fuera de Flyway. Se priorizó mantenibilidad y familiaridad del equipo sobre pureza arquitectónica, sabiendo que si el historial creciera hasta ser el cuello de botella, migrar esa única clase a R2DBC es un cambio acotado.
+Como JPA bloquea el hilo mientras espera a la base de datos, *todo* el acceso a datos se concentra en un único punto, `CallHistoryService`, que publica las operaciones en `Schedulers.boundedElastic()`. El event loop de Netty nunca queda bloqueado: el bloqueo se confina a un pool elástico dimensionado junto al pool de conexiones de HikariCP. Al estar aislado en esa clase, migrar a R2DBC más adelante —si el volumen del historial lo justificara— es un cambio acotado que no toca el resto de la aplicación.
 
 ### El mock devuelve un porcentaje aleatorio, no un valor fijo
 
-El enunciado permitía un mock que retornara siempre 10%. Se optó por un **valor aleatorio** entre 5% y 20% (`app.mock.min-percentage` / `max-percentage`) porque un mock constante no ejercita nada: con él, un bug de redondeo o un porcentaje que no se propaga hasta la respuesta pasarían desapercibidos.
+El servicio externo se simula con un **valor aleatorio** entre 5% y 20% (`app.mock.min-percentage` / `max-percentage`) en lugar de un porcentaje constante. Un mock que siempre devuelve el mismo número no ejercita la lógica: con un valor fijo, un error de redondeo o un porcentaje que no se propaga hasta la respuesta pasarían desapercibidos al probar la API a mano. Al variar en cada llamada, el porcentaje aplicado queda a la vista en `percentageApplied` y el cálculo es verificable de un vistazo.
 
-Consecuencias asumidas:
-
-- La respuesta expone `percentageApplied`, de modo que el resultado sigue siendo auditable.
-- Los tests **no** dependen del azar: sustituyen el servicio externo por WireMock con un valor fijo.
-- Existe `app.mock.seed` para hacer reproducible la secuencia cuando se necesita.
-
-### Sin caché del porcentaje
-
-Cada cálculo consulta el servicio externo. Se evaluó cachear el último porcentaje (ahorra llamadas y sirve de respaldo cuando el servicio cae) y se descartó: el enunciado pide que un fallo tras 3 intentos devuelva error, y una caché de respaldo enmascararía justamente esa condición. Añadirla más adelante es trivial —un `Mono.cache()` con TTL en `RemotePercentageProvider`— si el servicio externo pasara a ser costoso.
+La aleatoriedad no alcanza a los tests: éstos sustituyen el servicio externo por WireMock con un valor fijo, de modo que las aserciones son deterministas. Para reproducir una secuencia concreta en una demo o al depurar, `app.mock.seed` fija la semilla del generador.
 
 ### Reintentos con backoff exponencial
 
