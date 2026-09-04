@@ -1,0 +1,9 @@
+# Override para compilar la API desde el codigo fuente en lugar de descargar la
+# imagen publicada en Docker Hub. Util para desarrollo y para verificar que el
+# Dockerfile sigue construyendo:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
+services:
+  api:
+    build: .
+    image: tenpo-challenge:local

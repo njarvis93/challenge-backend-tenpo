@@ -14,7 +14,7 @@ API REST reactiva construida con **Spring Boot 4 / Spring WebFlux** y **Java 21*
 - [Tests](#tests)
 - [Integración continua](#integración-continua)
 - [Decisiones técnicas](#decisiones-técnicas)
-- [Publicar la imagen en Docker Hub](#publicar-la-imagen-en-docker-hub)
+- [Imagen en Docker Hub](#imagen-en-docker-hub)
 
 ---
 
@@ -22,13 +22,21 @@ API REST reactiva construida con **Spring Boot 4 / Spring WebFlux** y **Java 21*
 
 ### Con Docker Compose (recomendado)
 
-Único requisito: Docker.
+Único requisito: Docker. No hace falta compilar nada: la imagen se descarga de Docker Hub.
 
 ```bash
-docker compose up --build -d
+docker compose up -d
 ```
 
 Levanta tres contenedores: la API (`:8080`), PostgreSQL (`:5432`) y Redis (`:6379`). La API espera a que ambos estén *healthy* antes de arrancar, y Flyway crea el esquema en el primer arranque.
+
+La imagen publicada es **[`njarvis93/tenpo-challenge:1.0.0`](https://hub.docker.com/r/njarvis93/tenpo-challenge)**, construida para `linux/amd64` y `linux/arm64`.
+
+Si prefieres **compilar desde el código fuente** en vez de descargarla:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
+```
 
 Comprobar que está arriba:
 
@@ -337,18 +345,25 @@ Todas las respuestas de error usan `ProblemDetail` (`application/problem+json`),
 
 ---
 
-## Publicar la imagen en Docker Hub
+## Imagen en Docker Hub
+
+**https://hub.docker.com/r/njarvis93/tenpo-challenge**
+
+| Tag | Plataformas |
+|---|---|
+| `njarvis93/tenpo-challenge:1.0.0` | `linux/amd64`, `linux/arm64` |
+| `njarvis93/tenpo-challenge:latest` | `linux/amd64`, `linux/arm64` |
+
+Es la imagen que usa `docker-compose.yml` por defecto, así que basta con `docker compose up -d`. Para descargarla por separado:
 
 ```bash
-docker build --platform linux/amd64 -t <tu-usuario>/tenpo-challenge:1.0.0 .
+docker pull njarvis93/tenpo-challenge:1.0.0
 ```
+
+Se publica multi-arquitectura a propósito: construida solo en el Mac de desarrollo sería `arm64` y no arrancaría en un revisor con Intel ni en un runner de CI. Para regenerarla:
 
 ```bash
-docker login
+docker buildx build --platform linux/amd64,linux/arm64 -t njarvis93/tenpo-challenge:1.0.0 -t njarvis93/tenpo-challenge:latest --push .
 ```
 
-```bash
-docker push <tu-usuario>/tenpo-challenge:1.0.0
-```
-
-Para levantar el proyecto usando la imagen publicada en lugar de compilarla, define `DOCKERHUB_IMAGE` e `IMAGE_TAG` en tu `.env` y reemplaza `build: .` por `image: ${DOCKERHUB_IMAGE}:${IMAGE_TAG}` en `docker-compose.yml`.
+Puedes apuntar a otra imagen o tag sin tocar el compose, definiendo `DOCKERHUB_IMAGE` e `IMAGE_TAG` en tu `.env`.
