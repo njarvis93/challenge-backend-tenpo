@@ -60,6 +60,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # El driver por defecto de Docker no soporta exportar cache a GitHub
+      # Actions; buildx con el driver docker-container si.
+      - name: Configurar Buildx
+        uses: docker/setup-buildx-action@v3
+
       # Solo se valida que el Dockerfile construya; no se publica la imagen.
       - name: Construir imagen
         uses: docker/build-push-action@v6
