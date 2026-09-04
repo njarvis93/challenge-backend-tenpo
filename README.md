@@ -32,7 +32,7 @@ Levanta tres contenedores: la API (`:8080`), PostgreSQL (`:5432`) y Redis (`:637
 
 La imagen publicada es **[`njarvis93/tenpo-challenge:1.0.0`](https://hub.docker.com/r/njarvis93/tenpo-challenge)**, construida para `linux/amd64` y `linux/arm64`.
 
-Si prefieres **compilar desde el código fuente** en vez de descargarla:
+Para **compilar desde el código fuente** en lugar de descargar la imagen:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
@@ -58,7 +58,7 @@ docker compose down -v
 
 ### En local, sin contenerizar la API
 
-Necesitas PostgreSQL y Redis corriendo. Lo más cómodo es levantar solo esas dos dependencias con Compose:
+Se requieren PostgreSQL y Redis en marcha. Lo más cómodo es levantar solo esas dos dependencias con Compose:
 
 ```bash
 docker compose up -d postgres redis
@@ -137,6 +137,8 @@ Parámetros: `page` (base 0, por defecto `0`) y `size` (por defecto `20`, máxim
 
 ## Cómo probar cada funcionalidad
 
+Los ejemplos usan `curl` por ser copiables tal cual, pero todos los endpoints pueden ejercitarse igual desde **[Swagger UI](http://localhost:8080/swagger-ui.html)** con el botón *Try it out*, incluidos el `429` del rate limit y los errores de validación.
+
 ### 1. Cálculo con porcentaje dinámico
 
 ```bash
@@ -148,7 +150,7 @@ Con un porcentaje del 10% el resultado sería `11.00`, tal como pide el enunciad
 
 ### 2. Reintentos ante fallos del servicio externo
 
-Levanta la API forzando que el servicio externo falle siempre:
+Se levanta la API forzando que el servicio externo falle siempre:
 
 ```bash
 MOCK_FAILURE_RATE=1.0 docker compose up -d --force-recreate api
@@ -169,7 +171,7 @@ Para volver al comportamiento normal: `docker compose up -d --force-recreate api
 
 ### 3. Historial de llamadas
 
-Haz un par de llamadas y consúltalo:
+Tras un par de llamadas al endpoint de cálculo, el historial se consulta así:
 
 ```bash
 curl 'http://localhost:8080/api/v1/history?page=0&size=5'
@@ -226,6 +228,8 @@ Con el servicio levantado:
 
 - **Swagger UI** → http://localhost:8080/swagger-ui.html
 - **OpenAPI JSON** → http://localhost:8080/v3/api-docs
+
+Swagger UI no solo documenta los endpoints: permite ejecutarlos desde el navegador con el botón **Try it out**, que envía la petición real al servicio y muestra el código de estado, las cabeceras y el cuerpo de la respuesta. Es la vía más cómoda para recorrer la API sin escribir un solo `curl`.
 
 ---
 
@@ -347,23 +351,10 @@ Todas las respuestas de error usan `ProblemDetail` (`application/problem+json`),
 
 ## Imagen en Docker Hub
 
-**https://hub.docker.com/r/njarvis93/tenpo-challenge**
+Publicada en **[njarvis93/tenpo-challenge](https://hub.docker.com/r/njarvis93/tenpo-challenge)**, multi‑arquitectura (`linux/amd64` y `linux/arm64`), con los tags `1.0.0` y `latest`.
 
-| Tag | Plataformas |
-|---|---|
-| `njarvis93/tenpo-challenge:1.0.0` | `linux/amd64`, `linux/arm64` |
-| `njarvis93/tenpo-challenge:latest` | `linux/amd64`, `linux/arm64` |
-
-Es la imagen que usa `docker-compose.yml` por defecto, así que basta con `docker compose up -d`. Para descargarla por separado:
+Es la que levanta `docker compose up -d` por defecto; para descargarla por separado:
 
 ```bash
 docker pull njarvis93/tenpo-challenge:1.0.0
 ```
-
-Se publica multi-arquitectura a propósito: construida solo en el Mac de desarrollo sería `arm64` y no arrancaría en un revisor con Intel ni en un runner de CI. Para regenerarla:
-
-```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t njarvis93/tenpo-challenge:1.0.0 -t njarvis93/tenpo-challenge:latest --push .
-```
-
-Puedes apuntar a otra imagen o tag sin tocar el compose, definiendo `DOCKERHUB_IMAGE` e `IMAGE_TAG` en tu `.env`.
