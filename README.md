@@ -268,34 +268,32 @@ Requiere Docker: los tests de integración levantan PostgreSQL y Redis con Testc
 | `CallHistoryRepositoryTest` | Esquema de Flyway y paginación sobre PostgreSQL real |
 | `ApiIntegrationTest` | Recorrido end‑to‑end: cálculo, validación, `503`, `429`, registro asíncrono en historial y `404` |
 
-`verify` además genera el reporte de cobertura de JaCoCo en `target/site/jacoco/` y falla si la cobertura de líneas baja del **80 %** (umbral configurable en la propiedad `coverage.minimum` del `pom.xml`). Cobertura actual: **88 % de líneas**.
+`verify` además ejecuta las puertas de calidad descritas en [Integración continua](#integración-continua): genera el reporte de cobertura en `target/site/jacoco/` y falla si la cobertura de líneas baja del **80 %**, y pasa el código por SpotBugs y PMD. Cobertura actual: **88 % de líneas**.
 
 ---
 
 ## Integración continua
 
-Dos workflows de GitHub Actions se ejecutan en cada push a `main` y en cada pull request:
+Dos workflows de GitHub Actions se ejecutan en paralelo en cada push a `main` y en cada pull request. No dependen de ningún servicio externo ni requieren cuentas ni secretos: todo el análisis corre dentro del propio runner.
 
 | Workflow | Qué hace |
 |---|---|
 | [`build.yml`](.github/workflows/build.yml) | Compila con JDK 21, ejecuta la suite completa de tests (Testcontainers usa el Docker del runner), publica el jar y los reportes, y valida que el `Dockerfile` construya |
-| [`sonarqube.yml`](.github/workflows/sonarqube.yml) | Ejecuta los tests con cobertura y sube el análisis a SonarQube: bugs, vulnerabilidades, code smells y cobertura. Espera el veredicto del Quality Gate (`sonar.qualitygate.wait`), de modo que el job falla si el proyecto no lo supera |
+| [`quality.yml`](.github/workflows/quality.yml) | Ejecuta las tres puertas de calidad y publica los reportes junto con un resumen de cobertura |
 
-El umbral de cobertura se comprueba en dos puntos: `jacoco:check` lo exige durante el build (80 % de líneas) y el Quality Gate de SonarQube lo vuelve a evaluar sobre el código nuevo.
+### Puertas de calidad
 
-### Configuración necesaria
+Están declaradas en el `pom.xml` y se aplican en la fase `verify`, así que `./mvnw verify` reproduce en local exactamente lo que valida el CI:
 
-El análisis requiere un único secreto en el repositorio, **`SONAR_TOKEN`**, generado desde SonarQube. Las coordenadas del proyecto viven en las propiedades del `pom.xml`:
+| Herramienta | Qué comprueba | Cuándo falla |
+|---|---|---|
+| **JaCoCo** | Cobertura de tests | Cobertura de líneas por debajo del **80 %** (propiedad `coverage.minimum`) |
+| **SpotBugs** + **FindSecBugs** | Bugs y vulnerabilidades sobre el bytecode: NPEs, recursos sin cerrar, comparaciones sospechosas, patrones inseguros | Cualquier hallazgo de prioridad media o superior |
+| **PMD** + **CPD** | Code smells: código muerto, complejidad ciclomática y cognitiva, malas prácticas, bloques duplicados | Cualquier violación de las reglas activas |
 
-```xml
-<sonar.projectKey>njarvis93_challenge-backend-tenpo</sonar.projectKey>
-<sonar.organization>njarvis93</sonar.organization>
-<sonar.host.url>https://sonarcloud.io</sonar.host.url>
-```
+Las reglas de PMD viven en [`config/pmd-ruleset.xml`](config/pmd-ruleset.xml) y las exclusiones de SpotBugs en [`config/spotbugs-exclude.xml`](config/spotbugs-exclude.xml). Ambos archivos documentan el porqué de cada exclusión: solo se descartan reglas que en un proyecto Spring señalan como defecto algo que es correcto por diseño —por ejemplo, `EI_EXPOSE_REP` sobre beans singleton inyectados por el contenedor—, nunca hallazgos concretos sin justificación.
 
-Para un servidor de SonarQube propio en lugar de SonarQube Cloud basta con apuntar `sonar.host.url` a esa instancia y eliminar `sonar.organization`, que solo aplica a la versión cloud.
-
-Los pull requests provenientes de un fork no reciben el secreto, así que el workflow de análisis se omite en ese caso; el de build sigue ejecutándose.
+`build.yml` omite SpotBugs y PMD (`-Dspotbugs.skip -Dpmd.skip -Dcpd.skip`) para no repetir el mismo análisis que ya hace `quality.yml`.
 
 ---
 

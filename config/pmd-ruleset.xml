@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="challenge-backend-tenpo"
+	xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+	<description>
+		Reglas de PMD para el proyecto. Se parte de las categorias que detectan
+		defectos reales (errorprone, bestpractices, performance) y de las reglas
+		de diseno que miden complejidad, y se excluyen las que en un proyecto
+		Spring generan ruido sin senalar un problema.
+	</description>
+
+	<rule ref="category/java/errorprone.xml">
+		<!-- Los literales repetidos aqui son nombres de cabecera y rutas; extraerlos
+		     a constantes no aporta claridad. -->
+		<exclude name="AvoidDuplicateLiterals"/>
+		<exclude name="AvoidLiteralsInIfCondition"/>
+		<!-- Spring inyecta por constructor en clases no finales por diseno. -->
+		<exclude name="ConstructorCallsOverridableMethod"/>
+		<!-- Asignar null a un campo opcional ("no configurado") es idiomatico
+		     en Java y la regla no distingue ese caso de un error. -->
+		<exclude name="NullAssignment"/>
+	</rule>
+
+	<rule ref="category/java/bestpractices.xml">
+		<!-- Con SLF4J y logging parametrizado el guard no aporta. -->
+		<exclude name="GuardLogStatement"/>
+	</rule>
+
+	<rule ref="category/java/performance.xml"/>
+
+	<!-- De diseno solo interesan las metricas de complejidad y acoplamiento,
+	     no las reglas dogmaticas como LawOfDemeter. -->
+	<rule ref="category/java/design.xml/CyclomaticComplexity"/>
+	<rule ref="category/java/design.xml/CognitiveComplexity"/>
+	<rule ref="category/java/design.xml/NPathComplexity"/>
+	<rule ref="category/java/design.xml/ExcessiveParameterList"/>
+	<rule ref="category/java/design.xml/ExcessiveImports"/>
+	<rule ref="category/java/design.xml/GodClass"/>
+	<rule ref="category/java/design.xml/TooManyMethods"/>
+	<rule ref="category/java/design.xml/SimplifiedTernary"/>
+	<rule ref="category/java/design.xml/CollapsibleIfStatements"/>
+	<rule ref="category/java/design.xml/UselessOverridingMethod"/>
+
+	<!-- Del catalogo de estilo solo lo que senala codigo sobrante. -->
+	<rule ref="category/java/codestyle.xml/UnnecessaryImport"/>
+	<rule ref="category/java/codestyle.xml/UnnecessaryModifier"/>
+	<rule ref="category/java/codestyle.xml/UnnecessaryReturn"/>
+	<rule ref="category/java/codestyle.xml/EmptyControlStatement"/>
+
+</ruleset>

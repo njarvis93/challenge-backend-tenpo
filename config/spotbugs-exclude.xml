@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter
+	xmlns="https://github.com/spotbugs/filter/3.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="https://github.com/spotbugs/filter/3.0.0 https://raw.githubusercontent.com/spotbugs/spotbugs/master/spotbugs/etc/findbugsfilter.xsd">
+
+	<!--
+		Exclusiones justificadas. Cada una responde a un patron en el que
+		SpotBugs marca como defecto algo que en este proyecto es correcto por
+		diseno; no se silencian hallazgos concretos sin explicacion.
+	-->
+
+	<!--
+		EI_EXPOSE_REP / EI_EXPOSE_REP2: la regla asume que guardar o devolver un
+		objeto mutable filtra el estado interno. Aqui los objetos senalados son
+		beans singleton que Spring inyecta (WebClient, ObjectMapper,
+		AsyncProxyManager) y listas ya inmutables dentro de records de
+		respuesta. Copiarlos defensivamente romperia la inyeccion o duplicaria
+		datos sin ganar nada.
+	-->
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+	</Match>
+
+	<!--
+		PREDICTABLE_RANDOM: FindSecBugs exige un generador criptografico. Este
+		controlador es el mock del servicio externo y el numero que produce es
+		un porcentaje de prueba, no un secreto; ademas admite una semilla fija
+		precisamente para que la secuencia sea reproducible.
+	-->
+	<Match>
+		<Class name="cl.tenpo.challenge.infra.percentage.MockPercentageController"/>
+		<Bug pattern="PREDICTABLE_RANDOM"/>
+	</Match>
+
+</FindBugsFilter>

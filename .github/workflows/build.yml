@@ -29,8 +29,10 @@ jobs:
 
       # Los tests de integracion levantan PostgreSQL con Testcontainers,
       # que usa el Docker ya disponible en el runner de GitHub.
+      # SpotBugs y PMD se omiten aqui: de ellos se encarga el workflow
+      # de calidad, que corre en paralelo a este.
       - name: Build y tests
-        run: ./mvnw -B -ntp verify
+        run: ./mvnw -B -ntp verify -Dspotbugs.skip=true -Dpmd.skip=true -Dcpd.skip=true
 
       - name: Publicar reportes de test
         if: always()

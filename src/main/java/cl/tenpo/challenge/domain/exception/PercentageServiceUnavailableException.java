@@ -6,6 +6,8 @@ package cl.tenpo.challenge.domain.exception;
  */
 public class PercentageServiceUnavailableException extends RuntimeException {
 
+    private static final long serialVersionUID = 1L;
+
     public PercentageServiceUnavailableException(String message, Throwable cause) {
         super(message, cause);
     }

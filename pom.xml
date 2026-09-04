@@ -19,21 +19,12 @@
 		<bucket4j.version>8.19.0</bucket4j.version>
 		<wiremock.version>3.13.1</wiremock.version>
 		<jacoco.version>0.8.13</jacoco.version>
-		<sonar.version>5.1.0.4751</sonar.version>
+		<spotbugs.version>4.10.4.0</spotbugs.version>
+		<findsecbugs.version>1.14.0</findsecbugs.version>
+		<pmd.version>3.28.0</pmd.version>
 
-		<!-- Umbral minimo de cobertura de lineas exigido por jacoco:check.
-		     Se comprueba en el build, no solo en el analisis de SonarQube. -->
+		<!-- Umbral minimo de cobertura de lineas exigido por jacoco:check. -->
 		<coverage.minimum>0.80</coverage.minimum>
-
-		<!-- Analisis de SonarQube. projectKey y organization siguen la
-		     convencion de SonarQube Cloud (<owner>_<repo> y <owner>); para un
-		     servidor propio basta con sobreescribirlos por linea de comandos. -->
-		<sonar.projectKey>njarvis93_challenge-backend-tenpo</sonar.projectKey>
-		<sonar.organization>njarvis93</sonar.organization>
-		<sonar.host.url>https://sonarcloud.io</sonar.host.url>
-		<sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
-		<!-- La clase de arranque solo invoca SpringApplication.run -->
-		<sonar.coverage.exclusions>**/ChallengeBackendTenpoApplication.java</sonar.coverage.exclusions>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -207,10 +198,60 @@
 				</executions>
 			</plugin>
 
+			<!-- Deteccion de bugs sobre el bytecode: NPEs, recursos sin cerrar,
+			     comparaciones sospechosas. FindSecBugs anade reglas de seguridad. -->
 			<plugin>
-				<groupId>org.sonarsource.scanner.maven</groupId>
-				<artifactId>sonar-maven-plugin</artifactId>
-				<version>${sonar.version}</version>
+				<groupId>com.github.spotbugs</groupId>
+				<artifactId>spotbugs-maven-plugin</artifactId>
+				<version>${spotbugs.version}</version>
+				<configuration>
+					<effort>Max</effort>
+					<threshold>Medium</threshold>
+					<includeTests>false</includeTests>
+					<excludeFilterFile>${project.basedir}/config/spotbugs-exclude.xml</excludeFilterFile>
+					<plugins>
+						<plugin>
+							<groupId>com.h3xstream.findsecbugs</groupId>
+							<artifactId>findsecbugs-plugin</artifactId>
+							<version>${findsecbugs.version}</version>
+						</plugin>
+					</plugins>
+				</configuration>
+				<executions>
+					<execution>
+						<id>spotbugs-check</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- Code smells: codigo muerto, complejidad, malas practicas.
+			     CPD detecta ademas bloques duplicados. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-pmd-plugin</artifactId>
+				<version>${pmd.version}</version>
+				<configuration>
+					<rulesets>
+						<ruleset>${project.basedir}/config/pmd-ruleset.xml</ruleset>
+					</rulesets>
+					<printFailingErrors>true</printFailingErrors>
+					<includeTests>false</includeTests>
+					<minimumTokens>80</minimumTokens>
+				</configuration>
+				<executions>
+					<execution>
+						<id>pmd-check</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>check</goal>
+							<goal>cpd-check</goal>
+						</goals>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>

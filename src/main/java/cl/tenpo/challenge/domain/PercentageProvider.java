@@ -8,6 +8,7 @@ import reactor.core.publisher.Mono;
  * Puerto hacia el servicio externo de porcentaje. La implementacion real vive en
  * {@code infra.percentage}; los tests inyectan una implementacion determinista.
  */
+@FunctionalInterface
 public interface PercentageProvider {
 
     /**
