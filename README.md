@@ -30,7 +30,7 @@ docker compose up -d
 
 Levanta tres contenedores: la API (`:8080`), PostgreSQL (`:5432`) y Redis (`:6379`). La API espera a que ambos estén *healthy* antes de arrancar, y Flyway crea el esquema en el primer arranque.
 
-La imagen publicada es **[`njarvis93/tenpo-challenge:1.0.0`](https://hub.docker.com/r/njarvis93/tenpo-challenge)**, construida para `linux/amd64` y `linux/arm64`.
+La imagen publicada es **[`njarvis93/tenpo-challenge:1.1.0`](https://hub.docker.com/r/njarvis93/tenpo-challenge)**, construida para `linux/amd64` y `linux/arm64`.
 
 Para **compilar desde el código fuente** en lugar de descargar la imagen:
 
@@ -356,10 +356,10 @@ Todas las respuestas de error usan `ProblemDetail` (`application/problem+json`),
 
 ## Imagen en Docker Hub
 
-Publicada en **[njarvis93/tenpo-challenge](https://hub.docker.com/r/njarvis93/tenpo-challenge)**, multi‑arquitectura (`linux/amd64` y `linux/arm64`), con los tags `1.0.0` y `latest`.
+Publicada en **[njarvis93/tenpo-challenge](https://hub.docker.com/r/njarvis93/tenpo-challenge)**, multi‑arquitectura (`linux/amd64` y `linux/arm64`), con los tags `1.1.0` y `latest`.
 
 Es la que levanta `docker compose up -d` por defecto; para descargarla por separado:
 
 ```bash
-docker pull njarvis93/tenpo-challenge:1.0.0
+docker pull njarvis93/tenpo-challenge:1.1.0
 ```

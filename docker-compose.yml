@@ -32,7 +32,7 @@ services:
     # Imagen publicada en Docker Hub (multi-arquitectura: linux/amd64 y linux/arm64).
     # Para compilar desde el codigo fuente en vez de descargarla, usa el override:
     #   docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
-    image: ${DOCKERHUB_IMAGE:-njarvis93/tenpo-challenge}:${IMAGE_TAG:-1.0.0}
+    image: ${DOCKERHUB_IMAGE:-njarvis93/tenpo-challenge}:${IMAGE_TAG:-1.1.0}
     container_name: tenpo-api
     depends_on:
       postgres:
