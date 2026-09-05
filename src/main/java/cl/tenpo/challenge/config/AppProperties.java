@@ -24,10 +24,13 @@ public record AppProperties(Percentage percentage, Mock mock, RateLimit rateLimi
      * para que el sistema se ejercite de verdad; un valor fijo no probaria nada.
      *
      * @param failureRate probabilidad [0..1] de responder 500, para demostrar los reintentos
+     * @param failFirst   numero de llamadas iniciales que fallan siempre; a diferencia de
+     *                    {@code failureRate} es determinista, util para reproducir un
+     *                    escenario concreto de reintentos con una sola peticion
      * @param seed        semilla opcional; si viene, el aleatorio es reproducible
      */
     public record Mock(boolean enabled, BigDecimal minPercentage, BigDecimal maxPercentage,
-                       double failureRate, Long seed) {
+                       double failureRate, int failFirst, Long seed) {
     }
 
     /**

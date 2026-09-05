@@ -46,6 +46,8 @@ services:
       REDIS_URL: redis://redis:6379
       # Subir a 1.0 para forzar los fallos del servicio externo y ver los reintentos.
       MOCK_FAILURE_RATE: ${MOCK_FAILURE_RATE:-0.0}
+      # Falla las N primeras llamadas y responde bien a partir de la siguiente.
+      MOCK_FAIL_FIRST: ${MOCK_FAIL_FIRST:-0}
     ports:
       - "${API_PORT:-8080}:8080"
 

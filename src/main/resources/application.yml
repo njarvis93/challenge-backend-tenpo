@@ -41,6 +41,9 @@ app:
     max-percentage: 20.0
     # 0.0 = nunca falla. Subir a 1.0 para ver los 3 reintentos y el 503.
     failure-rate: ${MOCK_FAILURE_RATE:0.0}
+    # Las N primeras llamadas fallan y la siguiente responde bien: reproduce un
+    # escenario exacto de reintentos sin depender del azar. 0 = desactivado.
+    fail-first: ${MOCK_FAIL_FIRST:0}
     # Semilla opcional para hacer reproducible el porcentaje aleatorio.
     seed: ${MOCK_SEED:}
   rate-limit:

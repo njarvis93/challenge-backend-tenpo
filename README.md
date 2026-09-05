@@ -150,22 +150,26 @@ Con un porcentaje del 10% el resultado sería `11.00`, tal como pide el enunciad
 
 ### 2. Reintentos ante fallos del servicio externo
 
-Se levanta la API forzando que el servicio externo falle siempre:
+Dos variables controlan cómo falla el mock:
+
+| Variable | Efecto |
+|---|---|
+| `MOCK_FAIL_FIRST=2` | Fallan las 2 primeras llamadas y la 3ª responde. La API devuelve `200` tras dos reintentos |
+| `MOCK_FAILURE_RATE=1.0` | Fallan todas. Se agotan los 3 intentos y la API devuelve `503` |
+| `MOCK_FAILURE_RATE=0.5` | Falla la mitad de las llamadas. Simula un servicio intermitente: unas peticiones se recuperan en un reintento y otras agotan los tres |
+
+Los tres intentos ocurren dentro de la misma petición, así que un `curl` basta para ver cualquiera de los casos:
 
 ```bash
-MOCK_FAILURE_RATE=1.0 docker compose up -d --force-recreate api
-```
+MOCK_FAIL_FIRST=2 docker compose up -d --force-recreate api
 
-```bash
-curl -i -X POST http://localhost:8080/api/v1/calculations \
+curl -s -X POST http://localhost:8080/api/v1/calculations \
   -H 'Content-Type: application/json' -d '{"num1": 5, "num2": 5}'
+
+docker compose logs api | grep porcentaje
 ```
 
-Responde `503` y en los logs se ven los tres intentos:
-
-```bash
-docker compose logs api | grep "servicio de porcentaje"
-```
+El log deja traza de cada intento fallido con su número y, cuando la llamada termina bien, indica en qué intento se obtuvo el porcentaje. `MOCK_FAIL_FIRST` solo cuenta las primeras llamadas desde el arranque; recrear el contenedor reinicia el contador.
 
 Para volver al comportamiento normal: `docker compose up -d --force-recreate api`.
 
@@ -277,6 +281,7 @@ Requiere Docker: los tests de integración levantan PostgreSQL y Redis con Testc
 |---|---|
 | `CalculationServiceTest` | Fórmula, redondeo `HALF_UP` a 2 decimales y propagación de errores |
 | `RemotePercentageProviderTest` | Reintentos contra un servidor HTTP real (WireMock): éxito, fallo‑luego‑éxito, 3 fallos → error, y timeout |
+| `MockPercentageControllerTest` | Los dos modos de fallo del mock: determinista (`fail-first`) y probabilístico (`failure-rate`) |
 | `CallHistoryRepositoryTest` | Esquema de Flyway y paginación sobre PostgreSQL real |
 | `ApiIntegrationTest` | Recorrido end‑to‑end: cálculo, validación, `503`, `429`, registro asíncrono en historial y `404` |
 

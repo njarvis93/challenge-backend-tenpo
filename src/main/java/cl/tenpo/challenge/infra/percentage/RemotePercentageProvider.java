@@ -1,6 +1,7 @@
 package cl.tenpo.challenge.infra.percentage;
 
 import java.math.BigDecimal;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,21 +40,29 @@ public class RemotePercentageProvider implements PercentageProvider {
         // maxAttempts cuenta el intento original, por eso se reintenta una vez menos.
         long maxRetries = Math.max(0, config.maxAttempts() - 1L);
 
-        return webClient.get()
-                .uri(config.url())
-                .retrieve()
-                .bodyToMono(PercentagePayload.class)
-                .timeout(config.timeout())
-                .map(PercentagePayload::percentage)
-                .retryWhen(Retry.backoff(maxRetries, config.initialBackoff())
-                        .doBeforeRetry(signal -> log.warn(
-                                "Fallo la llamada al servicio de porcentaje (intento {} de {}): {}",
-                                signal.totalRetries() + 1, config.maxAttempts(),
-                                signal.failure().toString())))
-                .doOnNext(percentage -> log.debug("Porcentaje obtenido del servicio externo: {}%", percentage))
-                .onErrorMap(error -> new PercentageServiceUnavailableException(
-                        "El servicio de porcentaje no respondio tras %d intentos".formatted(config.maxAttempts()),
-                        error));
+        // El contador vive en el defer, fuera de la cadena que reintenta, para que
+        // sobreviva a las resuscripciones y diga en que intento se obtuvo la respuesta.
+        return Mono.defer(() -> {
+            AtomicInteger attempt = new AtomicInteger();
+
+            return webClient.get()
+                    .uri(config.url())
+                    .retrieve()
+                    .bodyToMono(PercentagePayload.class)
+                    .timeout(config.timeout())
+                    .map(PercentagePayload::percentage)
+                    .doOnSubscribe(subscription -> attempt.incrementAndGet())
+                    .doOnNext(percentage -> log.info(
+                            "Porcentaje obtenido del servicio externo: {}% (intento {} de {})",
+                            percentage, attempt.get(), config.maxAttempts()))
+                    .retryWhen(Retry.backoff(maxRetries, config.initialBackoff())
+                            .doBeforeRetry(signal -> log.warn(
+                                    "Fallo la llamada al servicio de porcentaje (intento {} de {}): {}",
+                                    signal.totalRetries() + 1, config.maxAttempts(),
+                                    signal.failure().toString())));
+        }).onErrorMap(error -> new PercentageServiceUnavailableException(
+                "El servicio de porcentaje no respondio tras %d intentos".formatted(config.maxAttempts()),
+                error));
     }
 
     /** Respuesta del servicio externo: {@code {"percentage": 12.4}}. */
